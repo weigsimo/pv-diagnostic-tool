@@ -1,1 +1,1 @@
-# pv-diagnostic-tool
+# AI-tool for shading and pollution detection of PV-plants
