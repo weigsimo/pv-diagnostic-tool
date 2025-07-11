@@ -4,6 +4,7 @@ import torch.optim as optim
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
 from pathlib import Path
 
 
@@ -88,7 +89,29 @@ def train_pollution_model(cluster_results, model_path):
         test_outputs = model(X_test_tensor)
         test_predictions = (test_outputs > 0.5).float()
         test_accuracy = (test_predictions == y_test_tensor).float().mean()
+        
+        # Convert to numpy for sklearn metrics
+        y_test_np = y_test_tensor.cpu().numpy().flatten()
+        y_pred_np = test_predictions.cpu().numpy().flatten()
+        
+        print(f"\n=== Pollution Model Performance ===")
         print(f"Test Accuracy: {test_accuracy:.4f}")
+        
+        # Calculate precision, recall, F1
+        precision, recall, f1, _ = precision_recall_fscore_support(y_test_np, y_pred_np, average='binary')
+        print(f"Precision: {precision:.4f}")
+        print(f"Recall: {recall:.4f}")
+        print(f"F1-Score: {f1:.4f}")
+        
+        # Confusion matrix
+        cm = confusion_matrix(y_test_np, y_pred_np)
+        print(f"\nConfusion Matrix:")
+        print(f"[[TN={cm[0,0]:3d}, FP={cm[0,1]:3d}]")
+        print(f" [FN={cm[1,0]:3d}, TP={cm[1,1]:3d}]]")
+        
+        # Classification report
+        print(f"\nDetailed Classification Report:")
+        print(classification_report(y_test_np, y_pred_np, target_names=['Clean', 'Polluted'], digits=4))
     
     # Save model and scaler
     model_data = {

@@ -46,7 +46,7 @@ Train models on a dataset of PV plants:
 
 ```bash
 cd src
-python main.py --input ../dev_data --output ../model --verbose --store
+python main.py --input ../dev_data --output ../model --verbose --store --plots
 ```
 
 **Arguments:**
@@ -55,6 +55,10 @@ python main.py --input ../dev_data --output ../model --verbose --store
 - `--output`: Directory to save trained models
 - `--verbose`: Enable detailed logging
 - `--store`: Save intermediate processing results
+- `--plots`: Generate clustering visualization plots (training mode only)
+  - Creates PCA scatter plots showing HDBSCAN (shading) and GMM (pollution) clustering results
+  - Plots are saved as PNG files in the respective cluster output directories
+  - Helps visualize how well the clustering algorithms separate different plant behaviors
 
 **Required Input Structure:**
 
@@ -110,7 +114,9 @@ Timestamp,PV(W),Battery(W),SOC(%),Load(W),MPP1(A),MPP2(A),MPP1(V),MPP2(V)
 ### Training Mode
 
 - Saves trained PyTorch models: `pollution_model.pth`, `shading_model.pth`
+- Displays comprehensive performance metrics (precision, recall, F1-score, confusion matrix)
 - Optional intermediate results (feature vectors, clusters, etc.)
+- With `--plots`: PCA clustering visualizations (`shading_clusters_pca.png`, `pollution_clusters_pca.png`)
 
 ### Prediction Mode
 
@@ -169,7 +175,12 @@ Generates JSON output with daily classifications:
 cd src
 python main.py --input ../dev_data --output ../models --verbose
 
+# Train models with clustering visualization plots
+cd src
+python main.py --input ../dev_data --output ../models --verbose --plots
+
 # Results: pollution_model.pth and shading_model.pth saved to ../models/
+# With --plots: PCA cluster visualizations saved to ../models/shading_clusters/ and ../models/pollution_clusters/
 ```
 
 ### Quick Start - Prediction

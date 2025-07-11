@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--predict", action="store_true", help="Switch to prediction mode (classify single plant)")
     parser.add_argument("--models", type=Path, help="Path to directory containing trained models (required for --predict)")
     parser.add_argument("--metadata", type=Path, help="Path to metadata CSV file (required for --predict)")
+    parser.add_argument("--plots", action="store_true", help="Generate clustering visualization plots (training mode only)")
     
     args = parser.parse_args()
     
@@ -72,8 +73,8 @@ def train_mode(args):
 
     # Step 7: Clustering
     print("7. Clustering...")
-    shading_clusters = create_shading_clusters(feature_vectors=shading_features, out_dir=args.output / "shading_clusters", verbose_output=args.verbose, store_results=args.store)
-    pollution_clusters = create_pollution_clusters(feature_vectors=pollution_features, out_dir=args.output / "pollution_clusters", verbose_output=args.verbose, store_results=args.store)
+    shading_clusters = create_shading_clusters(feature_vectors=shading_features, out_dir=args.output / "shading_clusters", verbose_output=args.verbose, store_results=args.store, create_plots=args.plots)
+    pollution_clusters = create_pollution_clusters(feature_vectors=pollution_features, out_dir=args.output / "pollution_clusters", verbose_output=args.verbose, store_results=args.store, create_plots=args.plots)
 
     # Step 8: Train models
     print("8. Training models...")
