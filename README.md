@@ -191,18 +191,6 @@ Generates JSON output with daily classifications and cleans up temporary files:
 
 ## Technical Details
 
-### Models and Cluster Mappings
-
-- **Pollution Detection**: Gaussian Mixture Model clustering + MLP neural network
-  - Cluster 0: Normal operation
-  - Larger cluster (1 or 2): Polluted state
-  - Smaller cluster (1 or 2): Other error state
-- **Shading Detection**: HDBSCAN clustering + MLP neural network
-  - Cluster -1: Normal operation (un-shaded)
-  - Cluster 0: Other error state
-  - Cluster 1+: Shaded state
-- **Features**: Daily aggregated power patterns, voltage/current variability, temporal characteristics
-
 ### Key Components
 
 - `main.py`: Entry point and workflow orchestration
