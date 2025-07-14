@@ -4,10 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import hdbscan
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import silhouette_score
-import warnings
 
 
 def create_shading_clusters(input_dir, output_dir, verbose_output=False, create_plots=False, plots_dir=None):
