@@ -13,13 +13,20 @@ An AI-powered tool for automatic detection of shading and pollution/soiling issu
 
 ## Architecture
 
-The tool implements a complete machine learning pipeline:
+The tool implements a complete machine learning pipeline with file-based architecture:
 
 1. **Data Preprocessing**: PVGIS API integration → hourly data extraction → operational data aggregation
-2. **Feature Engineering**: Creates specialized feature vectors for shading and pollution detection
-3. **Clustering**: Unsupervised learning to identify patterns in the data
-4. **Supervised Learning**: Neural networks trained on clustered data for classification
-5. **Prediction**: Daily classification of new plant data
+2. **Feature Engineering**: Creates specialized feature vectors organized by type (shading/pollution)
+3. **Clustering**: Unsupervised learning with organized storage (HDBSCAN for shading, GMM for pollution)
+4. **Supervised Learning**: Neural networks trained on clustered data with training curve visualization
+5. **Prediction**: Daily classification with file-based feature loading
+
+### File-Based Pipeline
+
+- **Smart Caching**: All intermediate results are cached as files for reproducibility
+- **Organized Structure**: Feature vectors and clusters stored in organized directories
+- **Resume Capability**: Can resume from any step if previous results exist
+- **Visualization**: Clustering plots and training curves automatically generated
 
 ## Installation
 
@@ -46,19 +53,50 @@ Train models on a dataset of PV plants:
 
 ```bash
 cd src
-python main.py --input ../dev_data --output ../model --verbose --store --plots
+python main.py --input ../dev_data --output ../model --verbose --plots
 ```
 
 **Arguments:**
 
 - `--input`: Path to directory containing training data
-- `--output`: Directory to save trained models
+- `--output`: Directory to save results (default: `model`)
 - `--verbose`: Enable detailed logging
-- `--store`: Save intermediate processing results
 - `--plots`: Generate clustering visualization plots (training mode only)
   - Creates PCA scatter plots showing HDBSCAN (shading) and GMM (pollution) clustering results
   - Plots are saved as PNG files in the respective cluster output directories
   - Helps visualize how well the clustering algorithms separate different plant behaviors
+
+**Smart Caching:**
+
+- All intermediate results are automatically cached as files
+- Rerunning the pipeline skips already completed steps
+- No more waiting for expensive PVGIS API calls if data already exists
+- Can resume from any failed step
+
+**Organized Output Structure:**
+
+Training mode creates an organized directory structure:
+
+```
+output/
+├── pvgis_results/          # PVGIS API responses
+├── hourly_data/            # Extracted hourly irradiance data
+├── hourly_averages/        # Daily averaged PVGIS data
+├── aggregated_data/        # Processed operational data
+├── differences/            # Theoretical vs actual comparisons
+├── feature_vectors/        # Organized feature vectors
+│   ├── shading/           # Shading-specific features
+│   └── pollution/         # Pollution-specific features
+├── clusters/              # Clustering results
+│   ├── shading/          # HDBSCAN clustering results
+│   └── pollution/        # GMM clustering results
+├── trained_models/        # Trained neural network models
+└── img/                  # Visualization plots (with --plots)
+    ├── shading_clusters_pca.png
+    ├── pollution_clusters_pca.png
+    ├── pollution_training_curves.png
+    └── shading_training_curves.png
+```
 
 **Required Input Structure:**
 
@@ -111,16 +149,18 @@ Timestamp,PV(W),Battery(W),SOC(%),Load(W),MPP1(A),MPP2(A),MPP1(V),MPP2(V)
 
 ## Output Format
 
-### Training Mode
+### Training Mode Output
 
-- Saves trained PyTorch models: `pollution_model.pth`, `shading_model.pth`
-- Displays comprehensive performance metrics (precision, recall, F1-score, confusion matrix)
-- Optional intermediate results (feature vectors, clusters, etc.)
-- With `--plots`: PCA clustering visualizations (`shading_clusters_pca.png`, `pollution_clusters_pca.png`)
+- Trained PyTorch models with scalers: `pollution_model.pth`, `shading_model.pth`
+- Comprehensive performance metrics (precision, recall, F1-score, confusion matrix)
+- Organized intermediate results (feature vectors, clusters, etc.)
+- With `--plots`: Clustering visualizations and training curve plots
+  - PCA projections showing cluster separation
+  - Training/validation loss and accuracy curves
 
-### Prediction Mode
+### Prediction Mode Output
 
-Generates JSON output with daily classifications:
+Generates JSON output with daily classifications and cleans up temporary files:
 
 ```json
 {
@@ -151,10 +191,16 @@ Generates JSON output with daily classifications:
 
 ## Technical Details
 
-### Models
+### Models and Cluster Mappings
 
 - **Pollution Detection**: Gaussian Mixture Model clustering + MLP neural network
+  - Cluster 0: Normal operation
+  - Larger cluster (1 or 2): Polluted state
+  - Smaller cluster (1 or 2): Other error state
 - **Shading Detection**: HDBSCAN clustering + MLP neural network
+  - Cluster -1: Normal operation (un-shaded)
+  - Cluster 0: Other error state
+  - Cluster 1+: Shaded state
 - **Features**: Daily aggregated power patterns, voltage/current variability, temporal characteristics
 
 ### Key Components
@@ -171,30 +217,31 @@ Generates JSON output with daily classifications:
 ### Quick Start - Training
 
 ```bash
-# Train models on sample dataset
-cd src
-python main.py --input ../dev_data --output ../models --verbose
-
-# Train models with clustering visualization plots
+# Train models with clustering visualization and training curves
 cd src
 python main.py --input ../dev_data --output ../models --verbose --plots
 
-# Results: pollution_model.pth and shading_model.pth saved to ../models/
-# With --plots: PCA cluster visualizations saved to ../models/shading_clusters/ and ../models/pollution_clusters/
+# Results:
+# - Models saved to ../models/trained_models/
+# - Visualizations saved to ../models/img/
+# - Organized feature vectors and clusters in ../models/feature_vectors/ and ../models/clusters/
 ```
 
 ### Quick Start - Prediction
 
 ```bash
-# Classify single plant
+# Classify single plant (uses file-based pipeline)
 cd src
 python main.py --predict \
     --input ../dev_data/goodwe_operational-data/gw-0001.csv \
-    --models ../models \
+    --models ../models/trained_models \
     --metadata ../dev_data/goodwe_plant_metadata.csv \
-    --output ../predictions
+    --output ../predictions \
+    --verbose
 
-# Results: gw-0001_predictions.json saved to ../predictions/
+# Results:
+# - gw-0001_predictions.json saved to ../predictions/
+# - Temporary files automatically cleaned up
 ```
 
 ## License
