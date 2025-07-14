@@ -20,7 +20,6 @@ def main():
     parser.add_argument("--input", type=Path, required=True, help="Path to input (dev_data directory for training, single CSV for prediction)")
     parser.add_argument("--output", type=Path, default=Path("model"), help="Path to save results")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
-    parser.add_argument("--store", action="store_true", help="Store intermediate results")
     parser.add_argument("--predict", action="store_true", help="Switch to prediction mode (classify single plant)")
     parser.add_argument("--models", type=Path, help="Path to directory containing trained models (required for --predict)")
     parser.add_argument("--metadata", type=Path, help="Path to metadata CSV file (required for --predict)")
@@ -48,41 +47,46 @@ def train_mode(args):
     
     # Step 1: PVGIS data
     print("\n1. Getting PVGIS data...")
-    seriescalc_values = pvgis_request(metadata_csv=args.input / "goodwe_plant_metadata.csv", result_dir=args.output / "pvgis_results", verbose_output=args.verbose, store_results=args.store)
+    pvgis_request(metadata_csv=args.input / "goodwe_plant_metadata.csv", result_dir=args.output / "pvgis_results", verbose_output=args.verbose)
 
     # Step 2: Extract hourly data
     print("2. Extracting hourly data...")
-    hourly_data = extract_hourly_data(json_list=seriescalc_values, output_dir=args.output / "hourly_data", verbose_output=args.verbose, store_results=args.store)
+    extract_hourly_data(input_dir=args.output / "pvgis_results", output_dir=args.output / "hourly_data", verbose_output=args.verbose)
     
     # Step 3: Get hourly averages
     print("3. Computing hourly averages...")
-    hourly_averages = get_hourly_averages(results_dict=hourly_data, out_dir=args.output / "hourly_averages", verbose_output=args.verbose, store_results=args.store)
+    get_hourly_averages(input_dir=args.output / "hourly_data", output_dir=args.output / "hourly_averages", verbose_output=args.verbose)
     
     # Step 4: Aggregate operational data
     print("4. Aggregating operational data...")
-    aggregated_data = aggregate_logs(raw_path=args.input / "goodwe_operational-data", agg_path=args.output / "aggregated_data", verbose_output=args.verbose, store_results=args.store)
+    aggregate_logs(raw_path=args.input / "goodwe_operational-data", output_dir=args.output / "aggregated_data", verbose_output=args.verbose)
 
     # Step 5: Compute differences
     print("5. Computing differences...")
-    differences = compute_differences(hourly_averages=hourly_averages, agg_data=aggregated_data, out_dir=args.output / "differences", verbose_output=args.verbose, store_results=args.store)
+    compute_differences(hourly_averages_dir=args.output / "hourly_averages", aggregated_data_dir=args.output / "aggregated_data", output_dir=args.output / "differences", verbose_output=args.verbose)
 
     # Step 6: Create feature vectors
     print("6. Creating feature vectors...")
-    shading_features = create_shading_features(differences_dict=differences, out_dir=args.output / "shading_fvs", verbose_output=args.verbose, store_results=args.store)
-    pollution_features = create_pollution_features(differences_dict=differences, out_dir=args.output / "pollution_fvs", verbose_output=args.verbose, store_results=args.store)
+    create_shading_features(differences_dir=args.output / "differences", output_dir=args.output, verbose_output=args.verbose)
+    create_pollution_features(differences_dir=args.output / "differences", output_dir=args.output, verbose_output=args.verbose)
 
     # Step 7: Clustering
     print("7. Clustering...")
-    shading_clusters = create_shading_clusters(feature_vectors=shading_features, out_dir=args.output / "shading_clusters", verbose_output=args.verbose, store_results=args.store, create_plots=args.plots)
-    pollution_clusters = create_pollution_clusters(feature_vectors=pollution_features, out_dir=args.output / "pollution_clusters", verbose_output=args.verbose, store_results=args.store, create_plots=args.plots)
+    plots_dir = args.output / "img"
+    plots_dir.mkdir(exist_ok=True)
+    create_shading_clusters(input_dir=args.output / "feature_vectors" / "shading", output_dir=args.output / "clusters" / "shading", verbose_output=args.verbose, create_plots=True, plots_dir=plots_dir)
+    create_pollution_clusters(input_dir=args.output / "feature_vectors" / "pollution", output_dir=args.output / "clusters" / "pollution", verbose_output=args.verbose, create_plots=True, plots_dir=plots_dir)
 
     # Step 8: Train models
     print("8. Training models...")
-    train_pollution_model(cluster_results=pollution_clusters, model_path=args.output / "pollution_model.pth")
-    train_shading_model(cluster_results=shading_clusters, model_path=args.output / "shading_model.pth")
+    models_dir = args.output / "trained_models"
+    models_dir.mkdir(exist_ok=True)
+    train_pollution_model(clusters_dir=args.output / "clusters" / "pollution", model_path=models_dir / "pollution_model.pth", plots_dir=plots_dir)
+    train_shading_model(clusters_dir=args.output / "clusters" / "shading", model_path=models_dir / "shading_model.pth", plots_dir=plots_dir)
 
     print("\n=== Training Complete ===")
-    print(f"Models saved to: {args.output}")
+    print(f"Models saved to: {models_dir}")
+    print("Ready for prediction mode!")
 
 
 def predict_mode(args):
@@ -93,15 +97,15 @@ def predict_mode(args):
     
     # Step 1: PVGIS data for single plant
     print("\n1. Getting PVGIS data...")
-    seriescalc_values = pvgis_request(metadata_csv=args.metadata, result_dir=args.output / "pvgis_results", verbose_output=args.verbose, store_results=args.store)
+    pvgis_request(metadata_csv=args.metadata, result_dir=args.output / "pvgis_results", verbose_output=args.verbose)
 
     # Step 2: Extract hourly data
     print("2. Extracting hourly data...")
-    hourly_data = extract_hourly_data(json_list=seriescalc_values, output_dir=args.output / "hourly_data", verbose_output=args.verbose, store_results=args.store)
+    extract_hourly_data(input_dir=args.output / "pvgis_results", output_dir=args.output / "hourly_data", verbose_output=args.verbose)
     
     # Step 3: Get hourly averages
     print("3. Computing hourly averages...")
-    hourly_averages = get_hourly_averages(results_dict=hourly_data, out_dir=args.output / "hourly_averages", verbose_output=args.verbose, store_results=args.store)
+    get_hourly_averages(input_dir=args.output / "hourly_data", output_dir=args.output / "hourly_averages", verbose_output=args.verbose)
     
     # Step 4: Process single CSV file
     print("4. Processing operational data...")
@@ -113,23 +117,41 @@ def predict_mode(args):
     plant_id = args.input.stem  # Get filename without extension
     shutil.copy(args.input, temp_dir / f"{plant_id}.csv")
     
-    aggregated_data = aggregate_logs(raw_path=temp_dir, agg_path=args.output / "aggregated_data", verbose_output=args.verbose, store_results=args.store)
+    aggregate_logs(raw_path=temp_dir, output_dir=args.output / "aggregated_data", verbose_output=args.verbose)
 
     # Step 5: Compute differences
     print("5. Computing differences...")
-    differences = compute_differences(hourly_averages=hourly_averages, agg_data=aggregated_data, out_dir=args.output / "differences", verbose_output=args.verbose, store_results=args.store)
+    compute_differences(hourly_averages_dir=args.output / "hourly_averages", aggregated_data_dir=args.output / "aggregated_data", output_dir=args.output / "differences", verbose_output=args.verbose)
 
     # Step 6: Create feature vectors
     print("6. Creating feature vectors...")
-    shading_features = create_shading_features(differences_dict=differences, out_dir=args.output / "shading_fvs", verbose_output=args.verbose, store_results=args.store)
-    pollution_features = create_pollution_features(differences_dict=differences, out_dir=args.output / "pollution_fvs", verbose_output=args.verbose, store_results=args.store)
+    create_shading_features(differences_dir=args.output / "differences", output_dir=args.output, verbose_output=args.verbose)
+    create_pollution_features(differences_dir=args.output / "differences", output_dir=args.output, verbose_output=args.verbose)
 
     # Step 7: Load models and predict
     print("7. Loading models and predicting...")
     pollution_model = load_pollution_model(args.models / "pollution_model.pth")
     shading_model = load_shading_model(args.models / "shading_model.pth")
     
-    # Get predictions for each day
+    # Load feature vectors from files
+    pollution_features = {}
+    shading_features = {}
+    
+    # Load pollution feature vectors
+    pollution_fv_dir = args.output / "feature_vectors" / "pollution"
+    if pollution_fv_dir.exists():
+        for fv_file in pollution_fv_dir.glob("feature_vectors_*.csv"):
+            plant_id = fv_file.stem.replace("feature_vectors_", "")
+            pollution_features[plant_id] = pd.read_csv(fv_file, index_col=0, parse_dates=True)
+    
+    # Load shading feature vectors  
+    shading_fv_dir = args.output / "feature_vectors" / "shading"
+    if shading_fv_dir.exists():
+        for fv_file in shading_fv_dir.glob("feature_vectors_*.csv"):
+            plant_id = fv_file.stem.replace("feature_vectors_", "")
+            shading_features[plant_id] = pd.read_csv(fv_file, index_col=0, parse_dates=True)
+    
+    # Get predictions
     pollution_predictions = predict_pollution(pollution_model, pollution_features)
     shading_predictions = predict_shading(shading_model, shading_features)
     
@@ -140,7 +162,7 @@ def predict_mode(args):
         metadata_csv=args.metadata,
         pollution_predictions=pollution_predictions,
         shading_predictions=shading_predictions,
-        differences=differences
+        differences_dir=args.output / "differences"
     )
     
     # Save results
@@ -148,11 +170,17 @@ def predict_mode(args):
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=2, default=str)
     
+    # Cleanup temporary directory
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+        if args.verbose:
+            print(f"Cleaned up temporary directory: {temp_dir}")
+    
     print(f"\n=== Prediction Complete ===")
     print(f"Results saved to: {output_file}")
 
 
-def create_prediction_output(plant_id, metadata_csv, pollution_predictions, shading_predictions, differences):
+def create_prediction_output(plant_id, metadata_csv, pollution_predictions, shading_predictions, differences_dir):
     
     # Read metadata for plant info
     metadata = pd.read_csv(metadata_csv)

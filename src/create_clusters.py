@@ -10,21 +10,57 @@ from sklearn.metrics import silhouette_score
 import warnings
 
 
-def create_shading_clusters(feature_vectors, out_dir=None, min_cluster_size=10, min_samples=5, verbose_output=False, store_results=True, create_plots=False):
-    results = {}
+def create_shading_clusters(input_dir, output_dir, verbose_output=False, create_plots=False, plots_dir=None):
+    """Create shading clusters from feature vector files"""
     
-    if store_results and out_dir:
-        output_path = Path(out_dir) / "shading"
-        output_path.mkdir(parents=True, exist_ok=True)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    if verbose_output:
+        print(f"Reading shading features from: {input_path}")
+        print(f"Writing clustering results to: {output_path}")
+    
+    # Load all feature vector files
+    feature_files = list(input_path.glob("feature_vectors_*.csv"))
+    
+    if not feature_files:
+        if verbose_output:
+            print("No shading feature files found")
+        return
     
     all_data = []
-    for plant_id, df in feature_vectors.items():
-        if df.empty:
+    for feature_file in feature_files:
+        plant_id = feature_file.stem.replace("feature_vectors_", "")
+        
+        # Check if output already exists
+        output_file = output_path / f"{plant_id}_shading_clusters.csv"
+        if output_file.exists():
+            if verbose_output:
+                print(f"  {plant_id}: shading clusters already exist, skipping")
             continue
         
-        plant_df = df.copy()
-        plant_df["plant"] = plant_id
-        all_data.append(plant_df)
+        try:
+            df = pd.read_csv(feature_file, index_col=0, parse_dates=True)
+            if df.empty:
+                continue
+            
+            plant_df = df.copy()
+            plant_df["plant"] = plant_id
+            all_data.append(plant_df)
+            
+            if verbose_output:
+                print(f"  Loaded {plant_id}: {len(df)} samples")
+                
+        except Exception as e:
+            if verbose_output:
+                print(f"  Error loading {plant_id}: {e}")
+            continue
+    
+    if not all_data:
+        if verbose_output:
+            print("No valid feature data found")
+        return
     
     combined_data = pd.concat(all_data, ignore_index=True)
     
@@ -35,14 +71,16 @@ def create_shading_clusters(feature_vectors, out_dir=None, min_cluster_size=10, 
     valid_indices = cluster_input.index
     clustering_data = combined_data.loc[valid_indices].copy()
     
-    if verbose_output:
-        print(f"Clustering {len(clustering_data)} data points from {len(feature_vectors)} plants")
+    # Check if we have enough data for clustering
+    if len(clustering_data) < 100:
+        if verbose_output:
+            print(f"Not enough data for clustering: {len(clustering_data)} samples (minimum required: 100)")
+        return
     
-    clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        metric='euclidean'
-    )
+    if verbose_output:
+        print(f"Clustering {len(clustering_data)} data points from {len(feature_files)} plants")
+    
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=100)
     
     cluster_labels = clusterer.fit_predict(cluster_input)
     clustering_data["cluster"] = cluster_labels
@@ -53,44 +91,83 @@ def create_shading_clusters(feature_vectors, out_dir=None, min_cluster_size=10, 
     if verbose_output:
         print(f"HDBSCAN: {n_clusters} clusters, {n_noise} noise points")
     
-    if create_plots:
+    if create_plots and plots_dir:
         _create_clustering_plot(
             cluster_input.values, cluster_labels, clustering_data,
             "HDBSCAN Shading Clusters",
-            output_path if store_results else None,
+            plots_dir,
             "shading_clusters_pca.png"
         )
     
-    for plant_id in feature_vectors.keys():
+    # Save results for each plant
+    plant_ids = clustering_data["plant"].unique()
+    for plant_id in plant_ids:
         plant_mask = clustering_data["plant"] == plant_id
         plant_results = clustering_data[plant_mask].copy()
         
         if not plant_results.empty:
             plant_results = plant_results.drop(columns=["plant"])
-            results[plant_id] = plant_results
+            output_file = output_path / f"{plant_id}_clustered.csv"
+            plant_results.to_csv(output_file, index=False)
             
-            if store_results and out_dir:
-                output_file = output_path / f"{plant_id}_shading_clusters.csv"
-                plant_results.to_csv(output_file, index=False)
+            if verbose_output:
+                print(f"    Saved {plant_id}: {len(plant_results)} clustered samples")
     
-    return results
+    if verbose_output:
+        print("Shading clustering complete.")
 
 
-def create_pollution_clusters(feature_vectors, out_dir=None, n_components=3, covariance_type="full", random_state=42, verbose_output=False, store_results=True, create_plots=False):
-    results = {}
+def create_pollution_clusters(input_dir, output_dir, n_components=3, covariance_type="full", random_state=42, verbose_output=False, create_plots=False, plots_dir=None):
+    """Create pollution clusters from feature vector files"""
     
-    if store_results and out_dir:
-        output_path = Path(out_dir) / "pollution"
-        output_path.mkdir(parents=True, exist_ok=True)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    if verbose_output:
+        print(f"Reading pollution features from: {input_path}")
+        print(f"Writing clustering results to: {output_path}")
+    
+    # Load all feature vector files
+    feature_files = list(input_path.glob("feature_vectors_*.csv"))
+    
+    if not feature_files:
+        if verbose_output:
+            print("No pollution feature files found")
+        return
     
     all_data = []
-    for plant_id, df in feature_vectors.items():
-        if df.empty:
+    for feature_file in feature_files:
+        plant_id = feature_file.stem.replace("feature_vectors_", "")
+        
+        # Check if output already exists
+        output_file = output_path / f"{plant_id}_clustered.csv"
+        if output_file.exists():
+            if verbose_output:
+                print(f"  {plant_id}: pollution clusters already exist, skipping")
             continue
         
-        plant_df = df.copy()
-        plant_df["plant"] = plant_id
-        all_data.append(plant_df)
+        try:
+            df = pd.read_csv(feature_file, index_col=0, parse_dates=True)
+            if df.empty:
+                continue
+            
+            plant_df = df.copy()
+            plant_df["plant"] = plant_id
+            all_data.append(plant_df)
+            
+            if verbose_output:
+                print(f"  Loaded {plant_id}: {len(df)} samples")
+                
+        except Exception as e:
+            if verbose_output:
+                print(f"  Error loading {plant_id}: {e}")
+            continue
+    
+    if not all_data:
+        if verbose_output:
+            print("No valid feature data found")
+        return
     
     combined_data = pd.concat(all_data, ignore_index=True)
     
@@ -102,10 +179,7 @@ def create_pollution_clusters(feature_vectors, out_dir=None, n_components=3, cov
     clustering_data = combined_data.loc[valid_indices].copy()
     
     if verbose_output:
-        print(f"Clustering {len(clustering_data)} data points from {len(feature_vectors)} plants")
-    
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(cluster_input)
+        print(f"Clustering {len(clustering_data)} data points from {len(feature_files)} plants")
     
     gmm = GaussianMixture(
         n_components=n_components,
@@ -115,8 +189,8 @@ def create_pollution_clusters(feature_vectors, out_dir=None, n_components=3, cov
         n_init=10
     )
     
-    cluster_labels = gmm.fit_predict(scaled_features)
-    cluster_probabilities = gmm.predict_proba(scaled_features)
+    cluster_labels = gmm.fit_predict(cluster_input)
+    cluster_probabilities = gmm.predict_proba(cluster_input)
     
     clustering_data["cluster"] = cluster_labels
     
@@ -126,57 +200,52 @@ def create_pollution_clusters(feature_vectors, out_dir=None, n_components=3, cov
     if verbose_output:
         print(f"GMM: {n_components} components")
     
-    if create_plots:
+    if create_plots and plots_dir:
         _create_clustering_plot(
-            scaled_features, cluster_labels, clustering_data,
+            cluster_input.values, cluster_labels, clustering_data,
             "GMM Pollution Clusters",
-            output_path if store_results else None,
+            plots_dir,
             "pollution_clusters_pca.png"
         )
     
-    for plant_id in feature_vectors.keys():
+    # Save results for each plant
+    plant_ids = clustering_data["plant"].unique()
+    for plant_id in plant_ids:
         plant_mask = clustering_data["plant"] == plant_id
         plant_results = clustering_data[plant_mask].copy()
         
         if not plant_results.empty:
             plant_results = plant_results.drop(columns=["plant"])
-            results[plant_id] = plant_results
+            output_file = output_path / f"{plant_id}_clustered.csv"
+            plant_results.to_csv(output_file, index=False)
             
-            if store_results and out_dir:
-                output_file = output_path / f"{plant_id}_pollution_clusters.csv"
-                plant_results.to_csv(output_file, index=False)
+            if verbose_output:
+                print(f"    Saved {plant_id}: {len(plant_results)} clustered samples")
     
-    return results
+    if verbose_output:
+        print("Pollution clustering complete.")
 
 
 def _create_clustering_plot(features, labels, data, title, output_path=None, filename="clusters_pca.png"):
-    pca = PCA(n_components=2, random_state=42)
-    reduced_features = pca.fit_transform(features)
+    """Create PCA visualization of clusters matching the original style"""
     
-    plt.figure(figsize=(10, 8))
-    
-    scatter = plt.scatter(
-        reduced_features[:, 0], 
-        reduced_features[:, 1], 
-        c=labels, 
-        cmap="viridis", 
-        alpha=0.7,
-        s=50
-    )
-    
-    plt.title(title, fontsize=14, fontweight='bold')
-    plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)", fontsize=12)
-    plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)", fontsize=12)
-    
-    cbar = plt.colorbar(scatter)
-    cbar.set_label("Cluster", fontsize=12)
-    
-    plt.grid(True, alpha=0.3)
+    # PCA um die Cluster zu visualisieren
+    pca = PCA(n_components=2)
+    reduced_data = pca.fit_transform(features)
+
+    # Visualisierung der Cluster
+    plt.figure(figsize=(8, 6))
+    plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap="viridis", alpha=0.7)
+    plt.title("PCA-Projection of Clusters")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.colorbar(label="Cluster")
+    plt.grid(True)
     plt.tight_layout()
     
     if output_path:
         plot_file = output_path / filename
-        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+        plt.savefig(plot_file, dpi=150, bbox_inches='tight')
         plt.close()
     else:
         plt.show() 

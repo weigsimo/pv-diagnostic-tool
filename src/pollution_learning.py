@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
@@ -24,12 +25,35 @@ class PollutionMLP(nn.Module):
         return self.model(x)
 
 
-def train_pollution_model(cluster_results, model_path):
+def train_pollution_model(clusters_dir, model_path, plots_dir=None):
     """Train pollution detection model and save it"""
     
     # Fixed test plants for consistent evaluation
     test_plants = ["gw-0002", "gw-0019", "gw-0025", "gw-0035", "gw-0040", 
                    "gw-0048", "gw-0053", "gw-0057", "gw-0065", "gw-0097"]
+    
+    # Load cluster results from files
+    clusters_path = Path(clusters_dir)
+    cluster_results = {}
+    
+    print("Loading pollution cluster data...")
+    for cluster_file in clusters_path.glob("*_clustered.csv"):
+        plant_id = cluster_file.stem.replace("_clustered", "")
+        try:
+            import pandas as pd
+            df = pd.read_csv(cluster_file)
+            # Convert DataFrame to expected format
+            cluster_results[plant_id] = {
+                'cluster_labels': df['cluster'].values,
+                'features': df.drop(['cluster', 'date'] + [col for col in df.columns if 'cluster_proba_' in col], axis=1, errors='ignore').values
+            }
+            print(f"  Loaded {plant_id}: {len(df)} samples")
+        except Exception as e:
+            print(f"  Error loading {plant_id}: {e}")
+            continue
+    
+    if not cluster_results:
+        raise ValueError("No cluster results found. Check clustering step.")
     
     # Prepare data with plant-based split
     X_train, X_test = [], []
@@ -71,17 +95,66 @@ def train_pollution_model(cluster_results, model_path):
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    # Training loop
+    # Training loop with tracking
     model.train()
+    train_losses = []
+    train_accuracies = []
+    val_losses = []
+    val_accuracies = []
+    
     for epoch in range(100):
+        # Training step
         optimizer.zero_grad()
         outputs = model(X_train_tensor)
         loss = criterion(outputs, y_train_tensor)
         loss.backward()
         optimizer.step()
         
+        # Track training metrics
+        with torch.no_grad():
+            train_preds = (outputs > 0.5).float()
+            train_acc = (train_preds == y_train_tensor).float().mean()
+            train_losses.append(loss.item())
+            train_accuracies.append(train_acc.item())
+            
+            # Validation metrics
+            val_outputs = model(X_test_tensor)
+            val_loss = criterion(val_outputs, y_test_tensor)
+            val_preds = (val_outputs > 0.5).float()
+            val_acc = (val_preds == y_test_tensor).float().mean()
+            val_losses.append(val_loss.item())
+            val_accuracies.append(val_acc.item())
+        
         if (epoch + 1) % 20 == 0:
             print(f"Epoch [{epoch+1}/100], Loss: {loss.item():.4f}")
+    
+    # Create training plots if plots_dir is provided
+    if plots_dir:
+        plt.figure(figsize=(12, 4))
+        
+        # Loss plot
+        plt.subplot(1, 2, 1)
+        plt.plot(train_losses, label='Training Loss')
+        plt.plot(val_losses, label='Validation Loss')
+        plt.title('Pollution Model - Training and Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        
+        # Accuracy plot
+        plt.subplot(1, 2, 2)
+        plt.plot(train_accuracies, label='Training Accuracy')
+        plt.plot(val_accuracies, label='Validation Accuracy')
+        plt.title('Pollution Model - Training and Validation Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.legend()
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'pollution_training_curves.png', dpi=150, bbox_inches='tight')
+        plt.close()
     
     # Evaluate
     model.eval()
@@ -125,7 +198,7 @@ def train_pollution_model(cluster_results, model_path):
 
 def load_pollution_model(model_path):
     """Load trained pollution detection model"""
-    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
     model = PollutionMLP(checkpoint['input_size'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()

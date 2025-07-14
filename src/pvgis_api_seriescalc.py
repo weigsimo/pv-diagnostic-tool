@@ -15,17 +15,15 @@ DEFAULT_ASPECT = 0  # azimuth (facing south)
 YEAR_RANGE_START = 2007
 YEAR_RANGE_END = 2024
 
-def pvgis_request(metadata_csv, result_dir=None, store_results=False, verbose_output=False):
-    """Query PVGIS API for all plants in metadata_csv"""
+def pvgis_request(metadata_csv, result_dir, verbose_output=False):
+    """Query PVGIS API for all plants in metadata_csv and store results"""
     
     metadata_path = Path(metadata_csv)
+    result_path = Path(result_dir)
+    result_path.mkdir(parents=True, exist_ok=True)
     
-    # Create result directory if storing results
-    if store_results and result_dir:
-        result_path = Path(result_dir)
-        result_path.mkdir(parents=True, exist_ok=True)
-        if verbose_output:
-            print(f"Directory {result_path} created.")
+    if verbose_output:
+        print(f"PVGIS results directory: {result_path}")
 
     # --- Read metadata CSV and prepare data ---
     with open(metadata_path, mode="r", newline="") as f:
@@ -48,20 +46,36 @@ def pvgis_request(metadata_csv, result_dir=None, store_results=False, verbose_ou
             }
             plants.append(plant)
 
-    # --- Query PVGIS API and save results ---
-    results = []
+    # --- Check for existing results and query PVGIS API ---
     for plant in plants:
+        plant_dir = result_path / plant["plant_id"]
+        plant_dir.mkdir(parents=True, exist_ok=True)
         
         if verbose_output:
             print(f"Processing plant: {plant['plant_id']}")
         
-        if store_results:
-            plant_dir = Path(result_dir) / plant["plant_id"]
-            plant_dir.mkdir(parents=True, exist_ok=True)
+        # Check which years already exist
+        existing_files = set()
+        if plant_dir.exists():
+            for file_path in plant_dir.glob(f"{plant['plant_id']}_*.json"):
+                year_str = file_path.stem.split('_')[-1]
+                try:
+                    existing_files.add(int(year_str))
+                except ValueError:
+                    pass
         
-        # Get data for every available year
-        for year in range(YEAR_RANGE_START, YEAR_RANGE_END):
+        # Get data for missing years only
+        missing_years = set(range(YEAR_RANGE_START, YEAR_RANGE_END)) - existing_files
         
+        if not missing_years:
+            if verbose_output:
+                print(f"  All years already cached for {plant['plant_id']}")
+            continue
+            
+        if verbose_output:
+            print(f"  Fetching {len(missing_years)} missing years: {sorted(missing_years)}")
+        
+        for year in sorted(missing_years):
             params = {
                 "lat": plant["lat"],
                 "lon": plant["lon"],
@@ -78,35 +92,35 @@ def pvgis_request(metadata_csv, result_dir=None, store_results=False, verbose_ou
             }
 
             if verbose_output:
-                print(f"Requesting data for {plant['plant_id']} for year {year}...")
+                print(f"    Requesting year {year}...")
             
-            response = requests.get(
-                PVGIS_API_SERIESCALC, 
-                params=params, 
-                timeout=REQUEST_TIMEOUT
-            )
-            response.raise_for_status()
+            try:
+                response = requests.get(
+                    PVGIS_API_SERIESCALC, 
+                    params=params, 
+                    timeout=REQUEST_TIMEOUT
+                )
+                response.raise_for_status()
 
-            result = response.json()
+                result = response.json()
 
-            # Add plant_id and year to result for downstream processing
-            result.setdefault("inputs", {})["plant_id"] = plant["plant_id"]
-            result["inputs"]["year"] = year
+                # Add plant_id and year to result for downstream processing
+                result.setdefault("inputs", {})["plant_id"] = plant["plant_id"]
+                result["inputs"]["year"] = year
 
-            if store_results:
-                file_name = Path(result_dir) / plant["plant_id"] / f"{plant['plant_id']}_{year}.json"
+                file_name = plant_dir / f"{plant['plant_id']}_{year}.json"
                 with open(file_name, "w") as f:
                     json.dump(result, f, indent=4)
+                    
                 if verbose_output:
-                    print(f"Saved: {file_name}")
-            else:
-                results.append(result)
-                if verbose_output:
-                    print(f"Data for {plant['plant_id']} for year {year} processed successfully.")
-        
-    if store_results:
-        if verbose_output:
-            print("All data processed and saved to disk.")
-        return None
-    else:
-        return results
+                    print(f"    Saved: {file_name}")
+                    
+                # Rate limiting
+                time.sleep(REQUEST_DELAY)
+                
+            except Exception as e:
+                print(f"    Error fetching {plant['plant_id']} year {year}: {e}")
+                continue
+    
+    if verbose_output:
+        print("PVGIS data processing complete.")
